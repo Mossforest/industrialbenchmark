@@ -25,18 +25,21 @@ SOFTWARE.
 """
 
 import numpy as np
+import time
 
-from stable_baselines.ddpg.policies import MlpPolicy as ddpgPolicy
-from stable_baselines.sac.policies import MlpPolicy as sacPolicy
-from stable_baselines.td3.policies import MlpPolicy as td3Policy
-from stable_baselines.common.policies import MlpPolicy
-from stable_baselines.common.vec_env import DummyVecEnv
-from stable_baselines.ddpg.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise, AdaptiveParamNoiseSpec
-from stable_baselines import A2C, DDPG, ACKTR, PPO2, SAC, TD3, TRPO
+from stable_baselines3.ddpg.policies import MlpPolicy as ddpgPolicy
+from stable_baselines3.sac.policies import MlpPolicy as sacPolicy
+from stable_baselines3.td3.policies import MlpPolicy as td3Policy
+from stable_baselines3.common.policies import ActorCriticPolicy as MlpPolicy
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise
+from stable_baselines3 import A2C, DDPG, PPO, SAC, TD3 #, TRPO
+from stable_baselines3.common.utils import get_device
 
 from industrial_benchmark_python.IBGym import IBGym
 
-algorithms = [("a2c", A2C), ("acktr", ACKTR), ("ppo", PPO2), ("sac", SAC), ("td3", TD3), ("trpo", TRPO), ("ddpg", DDPG)]
+# algorithms = [("a2c", A2C),("ppo", PPO), ("sac", SAC), ("td3", TD3), ("ddpg", DDPG)] #  ("trpo", TRPO),
+algorithms = [("ddpg", DDPG)] #  ("trpo", TRPO),
 GAMMA = 0.97
 N_trials = 5
 
@@ -47,6 +50,7 @@ for i in range(N_trials):
     print("Starting training round", i)
     for name, algo in algorithms:
         print("-->", name)
+        t1 = time.time()
         # create environment
         env = IBGym(setpoint=70, reward_type='classic', action_type='continuous', observation_type='include_past')
 
@@ -56,7 +60,7 @@ for i in range(N_trials):
 
         if name == "ddpg":
             action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=float(0.5) * np.ones(n_actions))
-            A = algo(ddpgPolicy, env, verbose=1, param_noise=param_noise, action_noise=action_noise, gamma=GAMMA)
+            A = algo(ddpgPolicy, env, verbose=1, action_noise=action_noise, gamma=GAMMA)
             A.learn(total_timesteps=500000)
         elif name == "td3":
             action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=float(0.1) * np.ones(n_actions))
@@ -72,6 +76,8 @@ for i in range(N_trials):
         # saving
         A.save("{0}-{1}_IB".format(name, i))
         del A
+        print(f'-----> finished {name} in {(time.time() - t1):.2f} sec.')
+
 
 # evaluating
 print("\nDone with trainings, moving on to evaluation\n")

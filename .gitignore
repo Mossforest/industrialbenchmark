@@ -8,3 +8,6 @@
 *.settings/
 *.classpath
 *.project
+
+industrial_benchmark_python/data/*
+!industrial_benchmark_python/data/*.py
