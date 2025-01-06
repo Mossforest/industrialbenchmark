@@ -167,8 +167,8 @@ class IDS(object):
         noise_u_g = np.random.rand()
         noise_u_v = np.random.rand()
         
-        noise_b_g = np.float(np.random.binomial(1, np.clip(effAct_gain,0.001, 0.999)))
-        noise_b_v = np.float(np.random.binomial(1, np.clip(effAct_velocity,0.001, 0.999)))
+        noise_b_g = np.float64(np.random.binomial(1, np.clip(effAct_gain,0.001, 0.999)))
+        noise_b_v = np.float64(np.random.binomial(1, np.clip(effAct_velocity,0.001, 0.999)))
 
         noise_gain = 2.0 * (1.0/(1.0+np.exp(-noise_e_g)) - 0.5)
         noise_velocity = 2.0 * (1.0/(1.0+np.exp(-noise_e_v)) - 0.5)
@@ -262,3 +262,142 @@ class IDS(object):
         if np.random.rand() < 0.1:
             p_ch *= 0.
         self._p_ch =  p_ch
+    
+    def save_state(self):
+        """
+        保存环境的完整状态
+        """
+        state_dict = {
+            # 保存主状态字典的深拷贝
+            'state': self.state.copy(),
+            
+            # 保存setpoint相关变量
+            'p_step': getattr(self, '_p_step', None),
+            'p_steps': getattr(self, '_p_steps', None),
+            'p_ch': getattr(self, '_p_ch', None),
+            
+            # 保存随机数生成器状态
+            'random_state': np.random.get_state(),
+            
+            # 保存Goldstone环境的dynamics状态
+            'gs_dynamics_state': self.gsEnvironment._dynamics.save_state()
+        }
+        return state_dict
+
+    def load_state(self, state_dict):
+        """
+        从保存的状态字典中恢复环境状态
+        """
+        # 恢复主状态字典
+        self.state = state_dict['state'].copy()
+        
+        # 恢复setpoint相关变量
+        if state_dict['p_step'] is not None:
+            self._p_step = state_dict['p_step']
+            self._p_steps = state_dict['p_steps']
+            self._p_ch = state_dict['p_ch']
+        
+        # 恢复随机数生成器状态
+        np.random.set_state(state_dict['random_state'])
+        
+        # 恢复Goldstone环境的dynamics状态
+        self.gsEnvironment._dynamics.load_state(state_dict['gs_dynamics_state'])
+
+if __name__ == "__main__":
+    """
+    验证环境状态的保存和加载功能
+    """
+    def compare_states(state1, state2):
+        """比较两个状态字典是否相同"""
+        if set(state1.keys()) != set(state2.keys()):
+            print("状态键不匹配")
+            return False
+            
+        for key in state1:
+            if isinstance(state1[key], np.ndarray):
+                if not np.array_equal(state1[key], state2[key]):
+                    print(f"数组不匹配: {key}")
+                    return False
+            elif isinstance(state1[key], dict):
+                if not compare_states(state1[key], state2[key]):
+                    print(f"子字典不匹配: {key}")
+                    return False
+            elif isinstance(state1[key], tuple):
+                # 处理tuple类型（比如random_state）
+                if not all(np.array_equal(a, b) if isinstance(a, np.ndarray) else a == b 
+                          for a, b in zip(state1[key], state2[key])):
+                    print(f"元组不匹配: {key}")
+                    return False
+            else:
+                try:
+                    if state1[key] != state2[key]:
+                        print(f"值不匹配: {key}")
+                        print(f"state1[{key}] = {state1[key]}")
+                        print(f"state2[{key}] = {state2[key]}")
+                        return False
+                except ValueError:
+                    print(f"无法比较的值类型: {key}")
+                    print(f"state1[{key}] 类型: {type(state1[key])}")
+                    print(f"state2[{key}] 类型: {type(state2[key])}")
+                    return False
+        return True
+
+    # 测试1：基本状态保存和加载
+    print("测试1：基本状态保存和加载")
+    env = IDS(p=50)
+    state1 = env.save_state()
+    env.load_state(state1)
+    state2 = env.save_state()
+    print("基本保存和加载测试通过：", compare_states(state1, state2))
+
+    # 测试2：执行动作后的状态保存和加载
+    print("\n测试2：执行动作后的状态保存和加载")
+    env = IDS(p=50)
+    env.step(np.array([0.5, 0.3, -0.2]))
+    state1 = env.save_state()
+    
+    # 保存一些关键值用于验证
+    cost1 = env.state['cost']
+    reward1 = -cost1
+    
+    env.step(np.array([-0.1, 0.4, 0.1]))  # 执行另一个动作改变状态
+    env.load_state(state1)  # 加载回之前的状态
+    
+    cost2 = env.state['cost']
+    reward2 = -cost2
+    state2 = env.save_state()
+    
+    print("状态匹配：", compare_states(state1, state2))
+    print("成本匹配：", cost1 == cost2)
+    print("奖励匹配：", reward1 == reward2)
+
+    # 测试3：多次保存加载的一致性
+    print("\n测试3：多次保存加载的一致性")
+    env = IDS(p=50)
+    states = []
+    for _ in range(5):
+        env.step(np.random.uniform(-1, 1, 3))
+        state = env.save_state()
+        states.append(state)
+        
+    # 逆序加载状态并验证
+    for i in range(len(states)-1, -1, -1):
+        env.load_state(states[i])
+        current_state = env.save_state()
+        print(f"第{i+1}个状态匹配：", compare_states(states[i], current_state))
+
+    # 测试4：随机性测试
+    print("\n测试4：随机性测试")
+    env = IDS(p=50)
+    state1 = env.save_state()
+    
+    # 执行相同的动作两次，检查是否得到不同的结果
+    action = np.array([0.5, 0.3, -0.2])
+    env.step(action)
+    result1 = env.state['cost']
+    
+    env.load_state(state1)
+    env.step(action)
+    result2 = env.state['cost']
+    
+    print("随机性保持（结果应该不同）：", result1 != result2)

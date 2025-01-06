@@ -130,3 +130,62 @@ class dynamics:
 
         _strongest_penality_abs_idx = number_steps // 4
         return _strongest_penality_abs_idx
+
+    def save_state(self):
+        """
+        保存dynamics的完整状态
+        """
+        state_dict = {
+            # 初始化参数
+            'number_steps': getattr(self, 'number_steps', None),
+            'max_required_step': self.maxRequiredStep if hasattr(self, 'maxRequiredStep') else None,
+            'safe_zone': self._safe_zone,
+            
+            # 计算的中间值
+            'strongest_penalty_abs_idx': self._strongest_penality_abs_idx,
+            
+            # 奖励函数相关
+            'penalty_functions_array': self._penalty_functions_array,
+            
+            # 其他可能的状态变量
+            'last_reward': getattr(self, '_last_reward', None),
+            'last_position': getattr(self, '_last_position', None)
+        }
+        return state_dict
+    
+    def load_state(self, state_dict):
+        """
+        从保存的状态字典中恢复dynamics状态
+        """
+        # 恢复初始化参数
+        if state_dict['number_steps'] is not None:
+            self.number_steps = state_dict['number_steps']
+        if state_dict['max_required_step'] is not None:
+            self.maxRequiredStep = state_dict['max_required_step']
+        self._safe_zone = state_dict['safe_zone']
+        
+        # 恢复计算的中间值
+        self._strongest_penality_abs_idx = state_dict['strongest_penalty_abs_idx']
+        
+        # 恢复奖励函数相关
+        self._penalty_functions_array = state_dict['penalty_functions_array']
+        
+        # 恢复其他可能的状态变量
+        if state_dict['last_reward'] is not None:
+            self._last_reward = state_dict['last_reward']
+        if state_dict['last_position'] is not None:
+            self._last_position = state_dict['last_position']
+    
+
+
+if __name__ == "__main__":
+    # 测试状态保存和恢复
+    dynamics_obj = dynamics(24, 0.5, 0.25)
+    # 执行一些操作
+    state1 = dynamics_obj.save_state()
+    # 继续执行操作
+    dynamics_obj.load_state(state1)
+    # 验证状态是否正确恢复
+    state2 = dynamics_obj.save_state()
+    print(state1 == state2)
+    

@@ -112,7 +112,7 @@ class IBGym(gym.Env):
 
         self.reset()
 
-    def step(self, action):
+    def step(self, action, n_samples=5):
         """
         performs one step in the environment by taking the specified action and returning the resulting observation
         :param action: the action to be taken
@@ -125,42 +125,52 @@ class IBGym(gym.Env):
 
         # keep the current action around for potential rendering
         self.last_action = action
+        results = []
+        current_state = self.IB.save_state()
+        
+        for _ in range(n_samples):
+            self.IB.load_state(current_state)
 
-        # Executing the action and saving the observation
-        if self.action_type == 'discrete':
-            self.IB.step(self.env_action[action])  # for discrete actions, we expect the action's index
-        elif self.action_type == 'continuous':
-            self.IB.step(action)  # in the continuous case, we expect the entire three dimensional action
+            # Executing the action and saving the observation
+            if self.action_type == 'discrete':
+                self.IB.step(self.env_action[action])  # for discrete actions, we expect the action's index
+            elif self.action_type == 'continuous':
+                self.IB.step(action)  # in the continuous case, we expect the entire three dimensional action
 
-        # update observation representation
-        return_observation = self._update_observation()
+            # update observation representation
+            return_observation = self._update_observation()
 
-        # Calculating both the relative reward (improvement or decrease) and updating the absolute reward
-        new_reward = -self.IB.state['cost']
-        self.delta_reward = new_reward - self.reward  # positive when improved
-        self.reward = new_reward
+            # Calculating both the relative reward (improvement or decrease) and updating the absolute reward
+            new_reward = -self.IB.state['cost']
+            self.delta_reward = new_reward - self.reward  # positive when improved
+            
+            done = (self.env_steps + 1) >= self.reset_after_timesteps
+            info = self._markovian_state()
 
+            results.append((return_observation, new_reward, done, info))
+        
+        self.observation = results[-1][0]
+        self.delta_reward = results[-1][1] - self.reward
+        self.reward = results[-1][1]
         # Due to the very high stochasticity a smoothed reward function can be easier to follow visually
         self.smoothed_reward = 0.9 * self.smoothed_reward + 0.1 * self.reward
-
-        # Stopping condition
         self.env_steps += 1
-        if self.env_steps >= self.reset_after_timesteps:
-            self.done = True
+        self.done = results[-1][2]
+        self.info = results[-1][3]
 
-        # Two reward functions are available:
-        # 'classic' which returns the original cost and
-        # 'delta' which returns the change in the cost function w.r.t. the previous cost
-        if self.reward_function == 'classic':
-            return_reward = self.reward
-        elif self.reward_function == 'delta':
-            return_reward = self.delta_reward
-        else:
-            raise ValueError('Invalid reward function specification. "classic" for the original cost function'
-                             ' or "delta" for the change in the cost fucntion between steps.')
+        # # Two reward functions are available:
+        # # 'classic' which returns the original cost and
+        # # 'delta' which returns the change in the cost function w.r.t. the previous cost
+        # if self.reward_function == 'classic':
+        #     return_reward = self.reward
+        # elif self.reward_function == 'delta':
+        #     return_reward = self.delta_reward
+        # else:
+        #     raise ValueError('Invalid reward function specification. "classic" for the original cost function'
+        #                      ' or "delta" for the change in the cost fucntion between steps.')
 
         self.info = self._markovian_state()  # entire markov state - not all info is visible in observations
-        return return_observation, return_reward, self.done, self.info
+        return results # return_observation, return_reward, self.done, self.info
 
     def reset(self):
         """
